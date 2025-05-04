@@ -4,6 +4,8 @@ use bevy::prelude::*;
 #[allow(unused_imports)]
 use avian2d::prelude::*;
 
+use bevy::window::{CursorGrabMode, PrimaryWindow, WindowMode};
+
 #[allow(unused_imports)]
 use rand::prelude::*;
 
@@ -22,17 +24,27 @@ fn spawn_camera(mut commands: Commands) {
     commands.spawn(Camera2d);
 }
 
-fn spawn_bg(mut commands: Commands, asset_server: Res<AssetServer>,) {
+fn hide_and_lock_cursor(mut q_windows: Query<&mut Window, With<PrimaryWindow>>) {
+    let mut window = q_windows.single_mut().unwrap();
+    window.cursor_options.visible = false;
+    window.cursor_options.grab_mode = CursorGrabMode::Locked;
+}
+
+fn spawn_bg(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.spawn((
-            Sprite::from_image(asset_server.load("bg.png")),
-            Transform::from_xyz(0.0, 0.0, -10.0).with_scale(Vec3::splat(0.35)),
+        Sprite::from_image(asset_server.load("bg.png")),
+        Transform::from_xyz(0.0, 0.0, -10.0).with_scale(Vec3::splat(0.35)),
     ));
 }
 
-fn spawn_player(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-) {
+fn start_music(mut commands: Commands, asset_server: Res<AssetServer>) {
+    commands.spawn((
+        AudioPlayer::new(asset_server.load("music.ogg")),
+        PlaybackSettings::LOOP,
+    ));
+}
+
+fn spawn_player(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.spawn((
         Sprite::from_image(asset_server.load("platform.png")),
         Transform::from_xyz(0.0, -200.0, 0.0).with_scale(Vec3::splat(0.15)),
@@ -44,7 +56,10 @@ fn spawn_player(
     ));
 }
 
-fn move_player(mut q_player: Query<&mut LinearVelocity, With<Player>>, keys: Res<ButtonInput<KeyCode>>) {
+fn move_player(
+    mut q_player: Query<&mut LinearVelocity, With<Player>>,
+    keys: Res<ButtonInput<KeyCode>>,
+) {
     let mut velocity = q_player.single_mut().unwrap();
     let mut x = 0.0;
     if keys.pressed(KeyCode::KeyA) {
@@ -67,8 +82,10 @@ fn spawn_plates(
         let random_loc = rng.random_range(-400.0..400.0);
         commands.spawn((
             Sprite::from_image(asset_server.load("plates.png")),
-            Transform::from_xyz(random_loc, 350.0, 0.0).with_scale(Vec3::splat(0.1)),
-            Plate {timer: Timer::from_seconds(2.0, TimerMode::Once)},
+            Transform::from_xyz(random_loc, 500.0, 0.0).with_scale(Vec3::splat(0.1)),
+            Plate {
+                timer: Timer::from_seconds(2.0, TimerMode::Once),
+            },
             RigidBody::Dynamic,
             Collider::rectangle(1500.0, 400.0),
             Friction::new(100.0),
@@ -94,28 +111,44 @@ fn despawn_plates(
 }
 
 #[allow(dead_code)]
-fn victory(
-    q_plates: Query<&Plate>,
-    mut commands: Commands,
-) {
+fn victory(q_plates: Query<&Plate>, mut commands: Commands) {
     let plates_count = q_plates.iter().len();
     if plates_count >= 2 {
-        commands.spawn((
-            Text::new("Victory"),
-        ));
+        commands.spawn((Text::new("Victory"),));
+    }
+}
+
+fn quit_game(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut exit: EventWriter<AppExit>,
+) {
+    if keys.just_pressed(KeyCode::Escape) {
+        exit.write(AppExit::Success);
     }
 }
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins)
+        .add_plugins(DefaultPlugins.set(WindowPlugin {
+            primary_window: Some(Window {
+                mode: WindowMode::BorderlessFullscreen(MonitorSelection::Primary),
+                ..Default::default()
+            }),
+            ..Default::default()
+        }))
         .add_plugins(PhysicsPlugins::default())
         //.add_plugins(PhysicsDebugPlugin::default())
-        .insert_resource(PlateSpawnTimer(Timer::from_seconds(4.0, TimerMode::Repeating)))
+        .insert_resource(PlateSpawnTimer(Timer::from_seconds(
+            4.0,
+            TimerMode::Repeating,
+        )))
         .add_systems(Startup, spawn_camera)
+        .add_systems(Startup, hide_and_lock_cursor)
         .add_systems(Startup, spawn_player)
         .add_systems(Startup, spawn_bg)
+        .add_systems(Startup, start_music)
         .add_systems(Update, spawn_plates)
         .add_systems(Update, move_player)
+        .add_systems(Update, quit_game)
         .run();
 }
